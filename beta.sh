@@ -88,15 +88,27 @@ validate_port() {
   fi
 }
 
-# Function to validate a domain or IP address (IPv4 or IPv6)
 validate_host() {
   local host="$1"
-  # Regex for IP address (IPv4)
+  
+  # حذف براکت‌های اطراف IPv6 در صورت وجود
+  host="${host#[}"
+  host="${host%]}"
+  
   local ipv4_regex="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-  # Comprehensive Regex for IPv6 address (covers various forms including '::' compression)
-  local ipv6_regex="^((([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})|(([0-9a-fA-F]{1,4}:){1,7}:)|(:(:[0-9a-fA-F]{1,4}){1,7})|(([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4})|(([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2})|(([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3})|(([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4})|(([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5})|([0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6}))|(::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4})|(([0-9a-fA-F]{1,4}:){1,7}:)|::)$"
-  # Regex for domain name
-  local domain_regex="^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$"
+  local domain_regex="^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+  local ipv6_regex="^(([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)|\
+([0-9a-fA-F]{1,4}:){1,7}:|\
+([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|\
+([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|\
+([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|\
+([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|\
+([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|\
+[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|\
+:((:[0-9a-fA-F]{1,4}){1,7}|:)|\
+fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|\
+::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|\
+([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$"
 
   if [[ "$host" =~ $ipv4_regex ]] || [[ "$host" =~ $domain_regex ]] || [[ "$host" =~ $ipv6_regex ]]; then
     return 0 # Valid
@@ -104,6 +116,7 @@ validate_host() {
     return 1 # Invalid
   fi
 }
+
 
 # --- Function to ensure 'trust' command symlink exists ---
 # This function is now removed as per user request.
