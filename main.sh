@@ -88,20 +88,35 @@ validate_port() {
   fi
 }
 
-# Function to validate a domain or IP address
 validate_host() {
   local host="$1"
-  # Regex for IP address (IPv4)
-  local ip_regex="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-  # Regex for domain name
-  local domain_regex="^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$"
+  
+  # حذف براکت‌های اطراف IPv6 در صورت وجود
+  host="${host#[}"
+  host="${host%]}"
+  
+  local ipv4_regex="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+  local domain_regex="^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+  local ipv6_regex="^(([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)|\
+([0-9a-fA-F]{1,4}:){1,7}:|\
+([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|\
+([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|\
+([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|\
+([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|\
+([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|\
+[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|\
+:((:[0-9a-fA-F]{1,4}){1,7}|:)|\
+fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|\
+::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|\
+([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$"
 
-  if [[ "$host" =~ $ip_regex ]] || [[ "$host" =~ $domain_regex ]]; then
+  if [[ "$host" =~ $ipv4_regex ]] || [[ "$host" =~ $domain_regex ]] || [[ "$host" =~ $ipv6_regex ]]; then
     return 0 # Valid
   else
     return 1 # Invalid
   fi
 }
+
 
 # --- Function to ensure 'trust' command symlink exists ---
 # This function is now removed as per user request.
@@ -984,6 +999,7 @@ perform_initial_setup() {
   return 0
 }
 
+
 # --- Add New Direct Server Action ---
 add_new_direct_server_action() {
   clear
@@ -1076,87 +1092,95 @@ add_new_direct_server_action() {
     echo ""
   fi
 
-  # Proceed only if certificate acquisition was successful or it already existed
-  # The check for cert_path existence is now inside the tls_enabled block
-  # so this outer if is no longer needed.
-  # if [ -d "$cert_path" ] || [[ "$tls_enabled" == "false" ]]; then # This condition is now implicitly handled by the above logic
+  echo -e "${CYAN}⚙️ Server Configuration:${RESET}"
+  # Prompt for IPv6 usage
+  local use_ipv6_input
+  local server_listen_addr="0.0.0.0" # Default to IPv4
+  echo -e "👉 ${WHITE}Do you want to use IPv6 for the server address? (Y/n, default: N):${RESET} "
+  read -p "" use_ipv6_input
+  use_ipv6_input=${use_ipv6_input:-N} # Default to N if empty
 
-    echo -e "${CYAN}⚙️ Server Configuration:${RESET}"
-    echo -e "  (Default listen port is 8800)"
+  if [[ "$use_ipv6_input" =~ ^[Yy]$ ]]; then
+    server_listen_addr="[::]"
+    print_success "Server will listen on IPv6 (and potentially IPv4 via mapped addresses)."
+  else
+    print_success "Server will listen on IPv4 only."
+  fi
+  echo ""
     
-    # Validate Listen Port
-    local listen_port
-    while true; do
-      echo -e "👉 ${WHITE}Enter listen port (1-65535, default 8800):${RESET} "
-      read -p "" listen_port_input
-      listen_port=${listen_port_input:-8800}
-      if validate_port "$listen_port"; then
-        break
-      else
-        print_error "Invalid port number. Please enter a number between 1 and 65535."
-      fi
+  # Validate Listen Port
+  local listen_port
+  while true; do
+    echo -e "  (Default listen port is 8800)"
+    echo -e "👉 ${WHITE}Enter listen port (1-65535, default 8800):${RESET} "
+    read -p "" listen_port_input
+    listen_port=${listen_port_input:-8800}
+    if validate_port "$listen_port"; then
+      break
+    else
+      print_error "Invalid port number. Please enter a number between 1 and 65535."
+    fi
+  done
+  echo -e "  (Default TCP upstream port is 2030)"
+  # Validate TCP Upstream Port
+  local tcp_upstream_port
+  while true; do
+    echo -e "👉 ${WHITE}Enter TCP upstream port (1-65535, default 2030):${RESET} " # Enter TCP upstream port (1-65535, default 8800):
+    read -p "" tcp_upstream_port_input
+    tcp_upstream_port=${tcp_upstream_port_input:-2030} # Apply default if empty
+    if validate_port "$tcp_upstream_port"; then
+      break
+    else
+      print_error "Invalid port number. Please enter a number between 1 and 65535." # Invalid port number. Please enter a number between 1 and 65535.
+    fi
+  done
+
+  echo -e "  (Default UDP upstream port is 2040)"
+  # Validate UDP Upstream Port
+  local udp_upstream_port
+  while true; do
+    echo -e "👉 ${WHITE}Enter UDP upstream port (1-65535, default 2040):${RESET} " # Enter UDP upstream port (1-65535, default 8800):
+    read -p "" udp_upstream_port_input
+    udp_upstream_port=${udp_upstream_port_input:-2040} # Apply default if empty
+    if validate_port "$udp_upstream_port"; then
+      break
+    else
+      print_error "Invalid port number. Please enter a number between 1 and 65535." # Invalid port number. Please enter a number between 1 and 65535.
+    fi
     done
-    echo -e "  (Default TCP upstream port is 8800)"
-    # Validate TCP Upstream Port
-    local tcp_upstream_port
-    while true; do
-      echo -e "👉 ${WHITE}Enter TCP upstream port (1-65535, default 2030):${RESET} " # Enter TCP upstream port (1-65535, default 8800):
-      read -p "" tcp_upstream_port_input
-      tcp_upstream_port=${tcp_upstream_port_input:-2030} # Apply default if empty
-      if validate_port "$tcp_upstream_port"; then
-        break
-      else
-        print_error "Invalid port number. Please enter a number between 1 and 65535." # Invalid port number. Please enter a number between 1 and 65535.
-      fi
-    done
-
-    echo -e "  (Default UDP upstream port is 8800)"
-    # Validate UDP Upstream Port
-    local udp_upstream_port
-    while true; do
-      echo -e "👉 ${WHITE}Enter UDP upstream port (1-65535, default 2040):${RESET} " # Enter UDP upstream port (1-65535, default 8800):
-      read -p "" udp_upstream_port_input
-      udp_upstream_port=${udp_upstream_port_input:-2040} # Apply default if empty
-      if validate_port "$udp_upstream_port"; then
-        break
-      else
-        print_error "Invalid port number. Please enter a number between 1 and 65535." # Invalid port number. Please enter a number between 1 and 65535.
-      fi
-      done
 
 
+  echo -e "👉 ${WHITE}Enter password:${RESET} "
+  read -p "" password
+  echo ""
 
-    echo -e "👉 ${WHITE}Enter password:${RESET} "
-    read -p "" password
+  if [[ -z "$password" ]]; then
+    echo -e "${RED}❌ Password cannot be empty!${RESET}"
     echo ""
+    echo -e "${YELLOW}Press Enter to return to main menu...${RESET}"
+    read -p ""
+    return
+  fi
 
-    if [[ -z "$password" ]]; then
-      echo -e "${RED}❌ Password cannot be empty!${RESET}"
-      echo ""
-      echo -e "${YELLOW}Press Enter to return to main menu...${RESET}"
-      read -p ""
-      return
-    fi
+  local service_file="/etc/systemd/system/trusttunnel-direct.service"
 
-    local service_file="/etc/systemd/system/trusttunnel-direct.service"
+  if systemctl is-active --quiet trusttunnel-direct.service || systemctl is-enabled --quiet trusttunnel-direct.service; then
+    echo -e "${YELLOW}🛑 Stopping existing Direct Trusttunnel service...${RESET}"
+    sudo systemctl stop trusttunnel-direct.service > /dev/null 2>&1
+    sudo systemctl disable trusttunnel-direct.service > /dev/null 2>&1
+    sudo rm -f /etc/systemd/system/trusttunnel-direct.service > /dev/null 2>&1
+    sudo systemctl daemon-reload > /dev/null 2>&1
+    print_success "Existing Direct TrustTunnel service removed."
+  fi
 
-    if systemctl is-active --quiet trusttunnel-direct.service || systemctl is-enabled --quiet trusttunnel-direct.service; then
-      echo -e "${YELLOW}🛑 Stopping existing Direct Trusttunnel service...${RESET}"
-      sudo systemctl stop trusttunnel-direct.service > /dev/null 2>&1
-      sudo systemctl disable trusttunnel-direct.service > /dev/null 2>&1
-      sudo rm -f /etc/systemd/system/trusttunnel-direct.service > /dev/null 2>&1
-      sudo systemctl daemon-reload > /dev/null 2>&1
-      print_success "Existing Direct TrustTunnel service removed."
-    fi
-
-    cat <<EOF | sudo tee "$service_file" > /dev/null
+  cat <<EOF | sudo tee "$service_file" > /dev/null
 [Unit]
 Description=Direct TrustTunnel Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$(pwd)/rstun/rstund --addr 0.0.0.0:$listen_port --password "$password" --tcp-upstream $tcp_upstream_port --udp-upstream $udp_upstream_port $cert_args --quic-timeout-ms 1000 --tcp-timeout-ms 1000 --udp-timeout-ms 1000
+ExecStart=$(pwd)/rstun/rstund --addr $server_listen_addr:$listen_port --password "$password" --tcp-upstream $tcp_upstream_port --udp-upstream $udp_upstream_port $cert_args --quic-timeout-ms 1000 --tcp-timeout-ms 1000 --udp-timeout-ms 1000
 Restart=always
 RestartSec=5
 User=$(whoami)
@@ -1165,20 +1189,14 @@ User=$(whoami)
 WantedBy=multi-user.target
 EOF
 
-    echo -e "${CYAN}🔧 Reloading systemd daemon...${RESET}"
-    sudo systemctl daemon-reload
+  echo -e "${CYAN}🔧 Reloading systemd daemon...${RESET}"
+  sudo systemctl daemon-reload
 
-    echo -e "${CYAN}🚀 Enabling and starting Direct Trusttunnel service...${RESET}"
-    sudo systemctl enable trusttunnel-direct.service > /dev/null 2>&1
-    sudo systemctl start trusttunnel-direct.service > /dev/null 2>&1
+  echo -e "${CYAN}🚀 Enabling and starting Direct Trusttunnel service...${RESET}"
+  sudo systemctl enable trusttunnel-direct.service > /dev/null 2>&1
+  sudo systemctl start trusttunnel-direct.service > /dev/null 2>&1
 
-    print_success "Direct TrustTunnel service started successfully!"
-  # else # This else block is no longer needed due to the early return in the TLS section
-  #   echo -e "${RED}❌ SSL certificate not available. Server setup aborted.${RESET}"
-  # fi
-
-
-
+  print_success "Direct TrustTunnel service started successfully!"
 
   echo ""
   echo -e "${YELLOW}Do you want to view the logs for trusttunnel-direct.service now? (y/N): ${RESET}" # Do you want to view the logs for trusttunnel.service now? (y/N):
@@ -1190,9 +1208,10 @@ EOF
   fi
 
   echo ""
-  echo -e "${YELLOW}Press Enter to return to previous menu...${RESET}"
+  echo -e "${YELLOW}Press Enter to return to main menu...${RESET}"
   read -p ""
 }
+
 
 # --- Add New Direct Client Action ---
 add_new_direct_client_action() {
@@ -1223,22 +1242,61 @@ add_new_direct_client_action() {
   fi
 
   echo -e "${CYAN}🌐 Server Connection Details:${RESET}"
-  echo -e "  (e.x., server.yourdomain.com:8800)"
   
-  # Validate Server Address
-  local server_addr
-  while true; do
-    echo -e "👉 ${WHITE}Server address and port (e.g., server.yourdomain.com:8800 or 192.168.1.1:8800):${RESET} " # Server address and port (e.g., server.yourdomain.com:8800 or 192.168.1.1:8800):
-    read -p "" server_addr_input
-    # Split into host and port for validation
-    local host_part=$(echo "$server_addr_input" | cut -d':' -f1)
-    local port_part=$(echo "$server_addr_input" | cut -d':' -f2)
+  local use_ipv6_server_input
+  local server_addr_input # The raw input from the user
+  local server_host_part  # The host part extracted (e.g., example.com, 192.168.1.1, 2001:db8::1)
+  local server_port_part  # The port part extracted
+  local final_server_addr # The final string to be used in ExecStart
 
-    if validate_host "$host_part" && validate_port "$port_part"; then
-      server_addr="$server_addr_input"
-      break
+  echo -e "👉 ${WHITE}Do you want to connect to the server using IPv6? (Y/n, default: N):${RESET} "
+  read -p "" use_ipv6_server_input
+  use_ipv6_server_input=${use_ipv6_server_input:-N} # Default to N if empty
+
+  if [[ "$use_ipv6_server_input" =~ ^[Yy]$ ]]; then
+    print_success "Client will attempt to connect to server via IPv6. Please enter address in '[IPv6_address]:port' or 'domain:port' format."
+  else
+    print_success "Client will attempt to connect to server via IPv4/Domain. Please enter address in 'host:port' format."
+  fi
+  echo ""
+
+  while true; do
+    echo -e "👉 ${WHITE}Enter server address and port:${RESET} "
+    read -p "" server_addr_input
+
+    # Try to parse as IPv6 literal first (e.g., [::1]:8800)
+    if [[ "$server_addr_input" =~ ^\[(.*)\]:([0-9]+)$ ]]; then
+        server_host_part="${BASH_REMATCH[1]}"
+        server_port_part="${BASH_REMATCH[2]}"
+        # Ensure user chose IPv6 if they entered IPv6 format
+        if [[ ! "$use_ipv6_server_input" =~ ^[Yy]$ ]]; then
+            print_error "You selected IPv4, but entered an IPv6 address in bracket format. Please re-enter or change your IPv6 choice."
+            continue
+        fi
+    # Then try to parse as standard host:port (e.g., example.com:8800, 192.168.1.1:8800)
+    elif [[ "$server_addr_input" =~ ^([^:]+):([0-9]+)$ ]]; then
+        server_host_part="${BASH_REMATCH[1]}"
+        server_port_part="${BASH_REMATCH[2]}"
+        # Ensure user chose IPv4/Domain if they entered that format
+        if [[ "$use_ipv6_server_input" =~ ^[Yy]$ ]]; then
+            # If user chose IPv6 but entered a non-bracketed address, it could be a domain that resolves to IPv6.
+            # We'll allow this for flexibility, but warn if it's clearly an IPv4 address.
+            if [[ "$server_host_part" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
+                print_error "You selected IPv6, but entered an IPv4 address. Please re-enter in '[IPv6_address]:port' format or change your IPv6 choice."
+                continue
+            fi
+        fi
     else
-      print_error "Invalid server address or port format. Please use 'host:port' (e.g., example.com:8800)." # Invalid server address or port format. Please use 'host:port' (e.g., example.com:8800).
+        print_error "Invalid server address format. Please use 'host:port' or '[IPv6_address]:port' as appropriate."
+        continue
+    fi
+
+    # Validate the extracted host and port parts
+    if validate_host "$server_host_part" && validate_port "$server_port_part"; then
+        final_server_addr="$server_addr_input" # Use the input as is, it's already correctly formatted
+        break
+    else
+        print_error "Invalid host or port in the provided address. Please ensure the host is a valid IP/domain and port is 1-65535."
     fi
   done
   echo ""
@@ -1307,12 +1365,12 @@ add_new_direct_client_action() {
   # Create the systemd service file
   cat <<EOF | sudo tee "$service_file" > /dev/null
 [Unit]
-Description=Direct TrustTunnel Client - $client_name
+Description=TrustTunnel Client - $client_name
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$(pwd)/rstun/rstunc --server-addr "$server_addr" --password "$password" $mapping_args --quic-timeout-ms 1000 --tcp-timeout-ms 1000 --udp-timeout-ms 1000 --wait-before-retry-ms 3000
+ExecStart=$(pwd)/rstun/rstunc --server-addr "$final_server_addr" --password "$password" $mapping_args --quic-timeout-ms 1000 --tcp-timeout-ms 1000 --udp-timeout-ms 1000 --wait-before-retry-ms 3000
 Restart=always
 RestartSec=5
 User=$(whoami)
@@ -1341,6 +1399,7 @@ EOF
   echo -e "${YELLOW}Press Enter to return to previous menu...${RESET}" # Press Enter to return to previous menu...
   read -p ""
 }
+
 
 # --- New: Function to get a new SSL certificate using Certbot ---
 get_new_certificate_action() {
@@ -1471,7 +1530,8 @@ certificate_management_menu() {
     echo ""
     echo -e "  ${YELLOW}1)${RESET} ${WHITE}Get new certificate${RESET}"
     echo -e "  ${YELLOW}2)${RESET} ${WHITE}Delete certificates${RESET}"
-    echo -e "  ${YELLOW}3)${RESET} ${WHITE}Back to main menu${RESET}"
+    echo -e "  ${YELLOW}3)${RESET} ${WHITE}New custom certificate from content${RESET}"
+    echo -e "  ${YELLOW}4)${RESET} ${WHITE}Back to main menu${RESET}"
     echo ""
     draw_line "$GREEN" "-" 40
     echo -e "👉 ${CYAN}Your choice:${RESET} "
@@ -1486,17 +1546,105 @@ certificate_management_menu() {
         delete_certificates_action
         ;;
       3)
-        echo -e "${YELLOW}بازگشت به منوی اصلی...${RESET}"
-        break # Break out of this while loop to return to main menu
+        add_custom_certificate_action
+        ;;
+      4)
+        echo -e "${YELLOW}Returning to main menu...${RESET}" # Changed to English
+        break
         ;;
       *)
-        echo -e "${RED}❌ Invalid option.${RESET}"
+        echo -e "${RED}❌ Invalid option.${RESET}" # Changed to English
         echo ""
-        echo -e "${YELLOW}Press Enter to continue...${RESET}"
+        echo -e "${YELLOW}Press Enter to continue...${RESET}" # Changed to English
         read -p ""
         ;;
     esac
   done
+}
+
+# --- New Function: Add Custom Certificate from Content ---
+add_custom_certificate_action() {
+  clear
+  echo ""
+  draw_line "$GREEN" "=" 40
+  echo -e "${CYAN}     ➕ Add Custom Certificate${RESET}"
+  draw_line "$GREEN" "=" 40
+  echo ""
+
+  echo -e "${WHITE}Please enter the domain name (e.g., example.com):${RESET}" # Changed to English
+  read -p "👉 " DOMAIN_NAME
+
+  if [ -z "$DOMAIN_NAME" ]; then
+    echo -e "${RED}❌ Domain name cannot be empty.${RESET}" # Changed to English
+    echo ""
+    echo -e "${YELLOW}Press Enter to continue...${RESET}" # Changed to English
+    read -p ""
+    return
+  fi
+
+  CERT_DIR="/etc/letsencrypt/live/$DOMAIN_NAME"
+  FULLCHAIN_PATH="$CERT_DIR/fullchain.pem"
+  PRIVKEY_PATH="$CERT_DIR/privkey.pem"
+
+  # Create directory if it doesn't exist
+  if [ ! -d "$CERT_DIR" ]; then
+    echo -e "${YELLOW}Creating directory: $CERT_DIR${RESET}" # Changed to English
+    if ! mkdir -p "$CERT_DIR"; then
+      echo -e "${RED}❌ Error creating directory. Please check permissions.${RESET}" # Changed to English
+      echo ""
+      echo -e "${YELLOW}Press Enter to continue...${RESET}" # Changed to English
+      read -p ""
+      return
+    fi
+  fi
+
+  echo ""
+  echo -e "${WHITE}Please paste the content of the ${CYAN}fullchain.pem${WHITE} file.${RESET}" # Changed to English
+  echo -e "${WHITE}After pasting, create a new line, type ${CYAN}END_CERT${WHITE}, and press Enter.${RESET}" # Changed to English
+  echo -e "${GREEN}--- Start pasting fullchain.pem ---${RESET}" # Changed to English
+  FULLCHAIN_CONTENT=""
+  while IFS= read -r line; do
+    if [[ "$line" == "END_CERT" ]]; then
+      break
+    fi
+    FULLCHAIN_CONTENT+="$line"$'\n'
+  done
+
+  echo -e "${GREEN}--- End pasting fullchain.pem ---${RESET}" # Changed to English
+  echo ""
+
+  echo -e "${WHITE}Please paste the content of the ${CYAN}privkey.pem${WHITE} file.${RESET}" # Changed to English
+  echo -e "${WHITE}After pasting, create a new line, type ${CYAN}END_CERT${WHITE}, and press Enter.${RESET}" # Changed to English
+  echo -e "${GREEN}--- Start pasting privkey.pem ---${RESET}" # Changed to English
+  PRIVKEY_CONTENT=""
+  while IFS= read -r line; do
+    if [[ "$line" == "END_CERT" ]]; then
+      break
+    fi
+    PRIVKEY_CONTENT+="$line"$'\n'
+  done
+  echo -e "${GREEN}--- End pasting privkey.pem ---${RESET}" # Changed to English
+  echo ""
+
+  # Save fullchain.pem
+  echo -e "$FULLCHAIN_CONTENT" > "$FULLCHAIN_PATH"
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ fullchain.pem saved successfully: $FULLCHAIN_PATH${RESET}" # Changed to English
+  else
+    echo -e "${RED}❌ Error saving fullchain.pem. Please check permissions.${RESET}" # Changed to English
+  fi
+
+  # Save privkey.pem
+  echo -e "$PRIVKEY_CONTENT" > "$PRIVKEY_PATH"
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ privkey.pem saved successfully: $PRIVKEY_PATH${RESET}" # Changed to English
+  else
+    echo -e "${RED}❌ Error saving privkey.pem. Please check permissions.${RESET}" # Changed to English
+  fi
+
+  echo ""
+  echo -e "${YELLOW}Press Enter to continue...${RESET}" # Changed to English
+  read -p ""
 }
 
 
@@ -1531,8 +1679,8 @@ while true; do
   # Menu
   echo "Select an option:" # Select an option:
   echo -e "${MAGENTA}1) Install Rstun${RESET}" # Install TrustTunnel
-  echo -e "${CYAN}2) Rstun reverse tunnel${RESET}" # Rstun reverse tunnel
-  echo -e "${CYAN}3) Rstun direct tunnel${RESET}" # Rstun direct tunnel
+  echo -e "${CYAN}2) Rstun reverse tunnel(Ipv4 only)${RESET}" # Rstun reverse tunnel
+  echo -e "${CYAN}3) Rstun direct tunnel(Ipv4/Ipv6)${RESET}" # Rstun direct tunnel
   echo -e "${YELLOW}4) Certificate management${RESET}" # New: Certificate management
   echo -e "${RED}5) Uninstall TrustTunnel${RESET}" # Shifted from 4
   echo -e "${WHITE}6) Exit${RESET}" # Shifted from 5
